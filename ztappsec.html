@@ -1,0 +1,974 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zero Trust Enabled Application Security Maturity Assessment</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    
+    <style>
+        /* Adding a custom font for a more professional feel */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            overflow-x: hidden;
+        }
+        /* Animation for highlighting a question when jumping to it */
+        @keyframes highlight {
+            from { background-color: #fef9c3; } /* yellow-100 */
+            to { background-color: #f9fafb; } /* slate-50 */
+        }
+        .highlight-jump {
+            animation: highlight 2s ease-out;
+        }
+        .score-text-green { color: #16a34a; }
+        .score-text-amber { color: #f59e0b; }
+        .score-text-red { color: #dc2626; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        // --- React Application Code ---
+
+        const { useState, useEffect, useMemo, useRef } = React;
+
+        // --- ASSESSMENT DATA ---
+        const assessmentData = {
+          "version": "1.0",
+          "description": "AppSec + Zero-Trust Assessment – OWASP SAMM v2.1 mapped to NIST Zero-Trust (SP 800-207).\n  Answer each question with one of: yes | partial | planned | no.\n  Scoring: 0 = Not Implemented, 1 = Planned, 2 = Partial, 3 = Fully Implemented.",
+          "frameworks": [
+            { "name": "OWASP SAMM v2.1", "url": "https://owasp.org/www-project-samm/" },
+            { "name": "NIST SP 800-207 Zero Trust Architecture", "url": "https://csrc.nist.gov/pubs/sp/800/207/final" }
+          ],
+          "scoring": {
+            "maturity_levels": { "0": "Not Implemented", "1": "Planned / Ad-hoc", "2": "Partially Implemented", "3": "Managed & Measured" },
+            "weight_strategy": { "default": 1.0, "industry_modifier": { "finance": 1.2, "healthcare": 1.3, "manufacturing": 1.1, "saas": 1.0, "government": 1.3 }, "size_modifier": { "small": 0.9, "medium": 1.0, "large": 1.1 } },
+            "aggregation": { "method": "weighted_average", "display": "percentage" }
+          },
+          "categories": [
+            {
+              "id": "governance",
+              "name": "Governance",
+              "weight": 1.2,
+              "practices": [
+                {
+                  "id": "GOV-STR",
+                  "name": "Strategy & Metrics",
+                  "nist_tenants": ["Governance", "Automation & Orchestration"],
+                  "weight": 1.0,
+                  "questions": [
+                    { "id": "STR-Q1A", "text": "Is there an executive-approved Application Security (AppSec) strategy document?", "nist_tenants": ["Governance"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Formalize and secure executive approval for a dedicated Application Security (AppSec) strategy to provide clear direction and mandate."] },
+                    { "id": "STR-Q1B", "text": "Is the AppSec strategy explicitly aligned with Zero-Trust principles (e.g., assume breach, verify explicitly, use least privilege)?", "nist_tenants": ["Governance", "Architecture"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Update the existing AppSec strategy to incorporate and map its goals to the core tenets of a Zero-Trust architecture."] },
+                    { "id": "STR-Q2", "text": "Are AppSec KPIs (e.g., MTTR for vulns, % code covered by scanning) tracked and reported quarterly?", "nist_tenants": ["Governance", "Visibility & Analytics"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Define measurable KPIs and integrate them into existing business dashboards."] },
+                    { "id": "STR-Q3", "text": "Does the organization maintain a risk-based inventory of all applications?", "nist_tenants": ["Visibility & Analytics"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Build or enhance an application inventory with risk ratings updated at least annually."] },
+                    { "id": "STR-Q4", "text": "Is there a multi-year roadmap that ties AppSec improvements to Zero-Trust milestones?", "nist_tenants": ["Governance"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Align AppSec roadmap with Zero-Trust pillars (identity, data, workloads, network)."] },
+                    { "id": "STR-Q5", "text": "Are budget and resources for AppSec explicitly approved during annual planning?", "nist_tenants": ["Governance"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Secure a discrete AppSec budget and track spend against outcomes."] }
+                  ]
+                },
+                {
+                  "id": "GOV-POC",
+                  "name": "Policy & Compliance",
+                  "nist_tenants": ["Governance", "Policy Engine"],
+                  "weight": 1.0,
+                  "questions": [
+                    { "id": "POC-Q1", "text": "Are secure coding and review requirements formally documented in policy?", "nist_tenants": ["Policy Engine"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Publish secure-coding standards and enforce them through CI policy gates."] },
+                    { "id": "POC-Q2", "text": "Is compliance with AppSec policy audited at least once a year?", "nist_tenants": ["Governance"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Schedule annual AppSec audits; track findings to closure."] },
+                    { "id": "POC-Q3", "text": "Do third-party and open-source components adhere to the same policy requirements?", "nist_tenants": ["Policy Engine", "Workloads"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Add SBOM and OSS policy clauses for all suppliers."] },
+                    { "id": "POC-Q4", "text": "Are Zero-Trust access requirements (MFA, least privilege) embedded in the SDLC policy?", "nist_tenants": ["Identity", "Policy Engine"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Update SDLC policies to enforce MFA and just-in-time privileges for build/deploy tasks."] },
+                    { "id": "POC-Q5", "text": "Is policy compliance automated (e.g., via CI/CD policy-as-code tools)?", "nist_tenants": ["Automation & Orchestration"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Adopt policy-as-code (e.g., OPA/Gatekeeper) for automated enforcement."] }
+                  ]
+                },
+                {
+                  "id": "GOV-EDU",
+                  "name": "Education & Guidance",
+                  "nist_tenants": ["Governance"],
+                  "weight": 0.9,
+                  "questions": [
+                    { "id": "EDU-Q1", "text": "Do developers receive annual secure-coding and Zero-Trust awareness training?", "nist_tenants": ["Governance"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Deploy role-based training covering both SAMM and Zero-Trust basics."] },
+                    { "id": "EDU-Q2", "text": "Are just-in-time secure-coding guidelines embedded in IDEs or code-review tools?", "nist_tenants": ["Governance", "Automation & Orchestration"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Provide IDE plugins or checklists integrating OWASP cheatsheets."] },
+                    { "id": "EDU-Q3", "text": "Is there a formal AppSec champion program across engineering teams?", "nist_tenants": ["Governance"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Nominate and train security champions; track their engagement."] },
+                    { "id": "EDU-Q4", "text": "Are Zero-Trust design patterns documented and shared internally?", "nist_tenants": ["Governance"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Create internal Zero-Trust architecture playbooks."] },
+                    { "id": "EDU-Q5", "text": "Is secure-coding guidance updated after major incidents or new threats?", "nist_tenants": ["Governance", "Visibility & Analytics"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Establish a post-mortem loop to refresh guidance."] }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "design",
+              "name": "Design",
+              "weight": 1.1,
+              "practices": [
+                {
+                  "id": "DES-THR",
+                  "name": "Threat Assessment",
+                  "nist_tenants": ["Architecture", "Visibility & Analytics"],
+                  "weight": 1.1,
+                  "questions": [
+                    { "id": "THR-Q1", "text": "Is formal threat modeling performed for high-risk applications?", "nist_tenants": ["Architecture"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Adopt STRIDE or PASTA and mandate it for critical apps."] },
+                    { "id": "THR-Q2", "text": "Does threat modeling incorporate Zero-Trust assumptions (no implicit trust, least privilege)?", "nist_tenants": ["Architecture"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Embed Zero-Trust tenets in data-flow diagrams and abuse cases."] },
+                    { "id": "THR-Q3", "text": "Are abuse cases / misuse stories reviewed alongside user stories?", "nist_tenants": ["Architecture"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Add abuse-case checkpoints in design reviews."] },
+                    { "id": "THR-Q4", "text": "Is the threat model updated after major architecture changes?", "nist_tenants": ["Visibility & Analytics"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Trigger threat-model refresh on significant code / infra changes."] },
+                    { "id": "THR-Q5", "text": "Are threat modeling results stored centrally and referenced in test plans?", "nist_tenants": ["Visibility & Analytics", "Automation & Orchestration"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Centralize models and link them to verification tasks."] }
+                  ]
+                },
+                {
+                  "id": "DES-REQ",
+                  "name": "Security Requirements",
+                  "nist_tenants": ["Policy Engine", "Data"],
+                  "weight": 1.0,
+                  "questions": [
+                    { "id": "REQ-Q1", "text": "Are security requirements documented for each new feature?", "nist_tenants": ["Policy Engine"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Template security requirements into Jira/ADO story definitions."] },
+                    { "id": "REQ-Q2", "text": "Do requirements explicitly address data classification and protection?", "nist_tenants": ["Data"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Tag data classes and map to encryption & access controls."] },
+                    { "id": "REQ-Q3", "text": "Are identity and access requirements (authN/Z) defined using Zero-Trust principles?", "nist_tenants": ["Identity", "Policy Engine"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Specify stronger MFA / RBAC / ABAC in requirement docs."] },
+                    { "id": "REQ-Q4", "text": "Are third-party APIs and components required to meet the same security requirements?", "nist_tenants": ["Workloads", "Data"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Extend requirement template to cover supply-chain dependencies."] },
+                    { "id": "REQ-Q5", "text": "Are requirements reviewed for completeness during design review gates?", "nist_tenants": ["Policy Engine"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Add security-architect sign-off to design gates."] }
+                  ]
+                },
+                {
+                  "id": "DES-ARC",
+                  "name": "Secure Architecture",
+                  "nist_tenants": ["Architecture", "Network", "Workloads"],
+                  "weight": 1.2,
+                  "questions": [
+                    { "id": "ARC-Q1", "text": "Is the application segmented into microservices or tiers with least-privilege networking?", "nist_tenants": ["Network", "Workloads"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Adopt service mesh / micro-segmentation to limit lateral movement."] },
+                    { "id": "ARC-Q2", "text": "Do services authenticate to each other using strong identities (mTLS, SPIFFE, IAM roles)?", "nist_tenants": ["Identity", "Workloads"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Implement workload identity (e.g., SPIRE, AWS IAM Roles) and enforce mTLS."] },
+                    { "id": "ARC-Q3", "text": "Is sensitive data encrypted in transit and at rest with centralized key management?", "nist_tenants": ["Data"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Adopt KMS/HSM integration for all data stores."] },
+                    { "id": "ARC-Q4", "text": "Are security controls architected as reusable services (e.g., auth service, logging service)?", "nist_tenants": ["Architecture", "Automation & Orchestration"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Centralize cross-cutting controls in platform services."] },
+                    { "id": "ARC-Q5", "text": "Is there a process to deprecate insecure protocols and ciphers?", "nist_tenants": ["Network", "Workloads"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Maintain TLS config baselines; automate scanning for weak ciphers."] }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "implementation",
+              "name": "Implementation",
+              "weight": 1.4,
+              "practices": [
+                {
+                  "id": "IMP-BLD",
+                  "name": "Secure Build",
+                  "nist_tenants": ["Automation & Orchestration", "Workloads"],
+                  "weight": 1.2,
+                  "questions": [
+                    { "id": "BLD-Q1", "text": "Is source-code integrity verified (e.g., signed commits, branch protection)?", "nist_tenants": ["Workloads", "Automation & Orchestration"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Enforce signed commits and branch protection rules."] },
+                    { "id": "BLD-Q2", "text": "Are CI build environments isolated with least privilege and ephemeral runners?", "nist_tenants": ["Workloads", "Network"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Adopt ephemeral build agents in isolated subnets."] },
+                    { "id": "BLD-Q3", "text": "Are SAST scans executed on every pull request?", "nist_tenants": ["Automation & Orchestration"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Integrate SAST scanners with PR checks."] },
+                    { "id": "BLD-Q4", "text": "Is dependency-vulnerability scanning automated in the build process (SBOM + CVE checks)?", "nist_tenants": ["Workloads"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Use tools like Dependabot, Renovate, or OWASP Dependency-Track."] },
+                    { "id": "BLD-Q5", "text": "Are container images signed and stored in a trusted registry?", "nist_tenants": ["Workloads"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Adopt image signing (e.g., cosign) and enforce registry policies."] }
+                  ]
+                },
+                {
+                  "id": "IMP-DEP",
+                  "name": "Secure Deployment",
+                  "nist_tenants": ["Automation & Orchestration", "Network"],
+                  "weight": 1.1,
+                  "questions": [
+                    { "id": "DEP-Q1", "text": "Is IaC (Infrastructure as Code) scanned for misconfigurations before deployment?", "nist_tenants": ["Automation & Orchestration"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Integrate IaC scanning (e.g., tfsec, Checkov) in CI."] },
+                    { "id": "DEP-Q2", "text": "Are deployments executed via automated pipelines with minimal human access?", "nist_tenants": ["Automation & Orchestration"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Enforce fully automated, audited deployments."] },
+                    { "id": "DEP-Q3", "text": "Is secrets management centralized and automated (e.g., Vault, AWS Secrets Manager)?", "nist_tenants": ["Identity", "Workloads"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Remove plaintext secrets; integrate secret-manager SDKs."] },
+                    { "id": "DEP-Q4", "text": "Are runtime policies (e.g., admission controllers, PodSecurity) enforced in Kubernetes?", "nist_tenants": ["Policy Engine", "Workloads"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Enable OPA/Kyverno policies for image provenance, rootless containers."] },
+                    { "id": "DEP-Q5", "text": "Is egress and ingress traffic restricted via firewall or service-mesh policies?", "nist_tenants": ["Network"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Apply network policies (K8s NetworkPolicy / Calico) or service-mesh mTLS."] }
+                  ]
+                },
+                {
+                  "id": "IMP-DEF",
+                  "name": "Defect Management",
+                  "nist_tenants": ["Visibility & Analytics", "Governance"],
+                  "weight": 1.0,
+                  "questions": [
+                    { "id": "DEF-Q1", "text": "Is there a formal process to triage and fix security findings within defined SLAs?", "nist_tenants": ["Governance"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Define CVSS-based SLAs and track in ticketing system."] },
+                    { "id": "DEF-Q2", "text": "Are vulnerability trends reported to stakeholders monthly?", "nist_tenants": ["Visibility & Analytics"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Automate metrics dashboards for open/closed vulnerabilities."] },
+                    { "id": "DEF-Q3", "text": "Is root-cause analysis performed on recurring or critical defects?", "nist_tenants": ["Governance"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Adopt blameless post-mortems with corrective actions."] },
+                    { "id": "DEF-Q4", "text": "Are false positives tracked and fed back to tooling configurations?", "nist_tenants": ["Visibility & Analytics"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Tune scanners; maintain suppression lists with justification."] },
+                    { "id": "DEF-Q5", "text": "Is vulnerability data correlated with asset criticality to prioritize fixes?", "nist_tenants": ["Visibility & Analytics", "Data"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Link vuln DB with CMDB/risk inventory for risk-based prioritization."] }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "verification",
+              "name": "Verification",
+              "weight": 1.3,
+              "practices": [
+                {
+                  "id": "VER-ARC",
+                  "name": "Architecture Assessment",
+                  "nist_tenants": ["Continuous Verification", "Architecture"],
+                  "weight": 1.0,
+                  "questions": [
+                    { "id": "VAC-Q1", "text": "Are architecture design reviews conducted by AppSec before production release?", "nist_tenants": ["Continuous Verification", "Architecture"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Add security-architect sign-off gate in release process."] },
+                    { "id": "VAC-Q2", "text": "Do reviews include Zero-Trust threat considerations (identity, network, data)?", "nist_tenants": ["Architecture"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Update design-review checklists with ZT tenants."] },
+                    { "id": "VAC-Q3", "text": "Are review findings tracked to closure before go-live?", "nist_tenants": ["Continuous Verification"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Block deployment until critical findings resolved."] },
+                    { "id": "VAC-Q4", "text": "Are material architecture changes re-reviewed?", "nist_tenants": ["Continuous Verification"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Trigger review on significant changes."] },
+                    { "id": "VAC-Q5", "text": "Are review artifacts stored for audit purposes?", "nist_tenants": ["Visibility & Analytics"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Store artifacts in a version-controlled repo."] }
+                  ]
+                },
+                {
+                  "id": "VER-REQ",
+                  "name": "Requirements-based Testing",
+                  "nist_tenants": ["Continuous Verification", "Data"],
+                  "weight": 1.1,
+                  "questions": [
+                    { "id": "VREQ-Q1", "text": "Are security-specific test cases derived from documented requirements?", "nist_tenants": ["Continuous Verification"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Map ASVS requirement IDs to automated tests."] },
+                    { "id": "VREQ-Q2", "text": "Is test coverage measured for critical security requirements (e.g., authN, crypto)?", "nist_tenants": ["Continuous Verification"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Track coverage metrics; raise gaps in sprint retros."] },
+                    { "id": "VREQ-Q3", "text": "Are data-protection requirements validated via encryption/key-rotation tests?", "nist_tenants": ["Data"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Automate crypto validation tests."] },
+                    { "id": "VREQ-Q4", "text": "Are regression security tests run on every release?", "nist_tenants": ["Continuous Verification"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Integrate security regression suite in CI/CD."] },
+                    { "id": "VREQ-Q5", "text": "Is test data sanitized and managed securely?", "nist_tenants": ["Data"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Mask or generate synthetic data for tests."] }
+                  ]
+                },
+                {
+                  "id": "VER-TEST",
+                  "name": "Security Testing",
+                  "nist_tenants": ["Continuous Verification", "Visibility & Analytics"],
+                  "weight": 1.2,
+                  "questions": [
+                    { "id": "VTEST-Q1", "text": "Are DAST scans executed against every major build or environment?", "nist_tenants": ["Continuous Verification"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Schedule automated DAST in staging & production."] },
+                    { "id": "VTEST-Q2", "text": "Are API security scans performed (e.g., OWASP API Top 10 checks)?", "nist_tenants": ["Continuous Verification"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Adopt tools like 42Crunch, StackHawk for API fuzzing."] },
+                    { "id": "VTEST-Q3", "text": "Is SCA (Software Composition Analysis) part of security testing?", "nist_tenants": ["Visibility & Analytics"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Integrate SCA across languages; track license risk."] },
+                    { "id": "VTEST-Q4", "text": "Are penetration tests or red-team exercises conducted at least annually?", "nist_tenants": ["Continuous Verification"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Budget annual pentest; increase frequency for critical systems."] },
+                    { "id": "VTEST-Q5", "text": "Are test results fed into defect tracking with SLA-based remediation?", "nist_tenants": ["Visibility & Analytics"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Automate ticket creation from scanner outputs."] }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "operations",
+              "name": "Operations",
+              "weight": 1.3,
+              "practices": [
+                {
+                  "id": "OPS-INC",
+                  "name": "Incident Management",
+                  "nist_tenants": ["Visibility & Analytics", "Automation & Orchestration"],
+                  "weight": 1.2,
+                  "questions": [
+                    { "id": "INC-Q1", "text": "Is there an AppSec-specific incident response (IR) playbook?", "nist_tenants": ["Visibility & Analytics"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Create IR runbooks for common AppSec scenarios."] },
+                    { "id": "INC-Q2", "text": "Are IR playbooks tested via tabletop or red-team drills?", "nist_tenants": ["Visibility & Analytics"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Run semi-annual AppSec incident drills."] },
+                    { "id": "INC-Q3", "text": "Is there centralized logging with correlation across identity, network, and app layers?", "nist_tenants": ["Visibility & Analytics"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Adopt SIEM/EDR with cross-layer analytics."] },
+                    { "id": "INC-Q4", "text": "Are alerts enriched with business context for prioritization?", "nist_tenants": ["Automation & Orchestration"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Integrate asset criticality tags into alert pipeline."] },
+                    { "id": "INC-Q5", "text": "Is incident data fed back to update threat models and controls?", "nist_tenants": ["Governance", "Architecture"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Add post-incident review tasks to update models."] }
+                  ]
+                },
+                {
+                  "id": "OPS-ENV",
+                  "name": "Environment Management",
+                  "nist_tenants": ["Workloads", "Network", "Automation & Orchestration"],
+                  "weight": 1.1,
+                  "questions": [
+                    { "id": "ENV-Q1", "text": "Are non-prod environments segregated from production with strict network controls?", "nist_tenants": ["Network"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Harden VPC/VNet rules; use separate accounts/projects."] },
+                    { "id": "ENV-Q2", "text": "Is least-privilege access enforced via RBAC/ABAC across envs?", "nist_tenants": ["Identity"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Audit permissions and enforce role-based policies."] },
+                    { "id": "ENV-Q3", "text": "Are configuration drifts detected automatically (e.g., CSPM, Terraform drift detection)?", "nist_tenants": ["Automation & Orchestration"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Add drift detection tool and alert on changes."] },
+                    { "id": "ENV-Q4", "text": "Are baseline images hardened and scanned for CIS / STIG compliance?", "nist_tenants": ["Workloads"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Adopt hardened AMIs / base images; scan regularly."] },
+                    { "id": "ENV-Q5", "text": "Is auto-scaling infrastructure configured to inherit security controls (e.g., IAM roles, network ACLs)?", "nist_tenants": ["Automation & Orchestration"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Template controls into launch configurations."] }
+                  ]
+                },
+                {
+                  "id": "OPS-OPS",
+                  "name": "Operational Management",
+                  "nist_tenants": ["Automation & Orchestration", "Visibility & Analytics"],
+                  "weight": 1.0,
+                  "questions": [
+                    { "id": "OPS-Q1", "text": "Are security patches applied automatically or within defined SLAs?", "nist_tenants": ["Automation & Orchestration"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Enable automated patching for OS and runtimes."] },
+                    { "id": "OPS-Q2", "text": "Do you have runtime protection (RASP/WAF or eBPF) with alerting?", "nist_tenants": ["Visibility & Analytics"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Deploy RASP or eBPF-based runtime monitors for critical apps."] },
+                    { "id": "OPS-Q3", "text": "Is capacity planning performed to avoid security control bypass during peak load?", "nist_tenants": ["Automation & Orchestration"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Stress-test WAF/rate-limit configs under peak traffic."] },
+                    { "id": "OPS-Q4", "text": "Are privileged access sessions recorded and reviewed?", "nist_tenants": ["Identity", "Visibility & Analytics"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Adopt session recording / PAM tooling."] },
+                    { "id": "OPS-Q5", "text": "Is uptime of security tooling (scanners, SIEM) monitored with SLAs?", "nist_tenants": ["Automation & Orchestration"], "maturity_map": { "yes": 3, "partial": 2, "planned": 1, "no": 0, "i_dont_know": 0 }, "recommendations": ["Add health checks and alerting for security tools."] }
+                  ]
+                }
+              ]
+            }
+          ],
+          "reporting": {
+            "outputs": [
+              { "executive_summary": true },
+              { "detailed_report": true },
+              { "maturity_heatmap": true },
+              { "framework_mapping_matrix": true }
+            ],
+            "recommendations_prioritization": { "quick_win_threshold": "< 2", "long_term_threshold": "< 3" }
+          }
+        };
+
+        // --- HELPER FUNCTIONS ---
+        const getTotalQuestions = (data) => {
+          if (!data || !data.categories) return 0;
+          return data.categories.reduce((total, category) => {
+            return total + category.practices.reduce((catTotal, practice) => {
+              return catTotal + practice.questions.length;
+            }, 0);
+          }, 0);
+        };
+
+        const getScoreColor = (score) => {
+            if (score >= 75) return 'rgba(22, 163, 74, 1)'; // green-600
+            if (score >= 40) return 'rgba(245, 158, 11, 1)'; // amber-500
+            return 'rgba(220, 38, 38, 1)'; // red-600
+        };
+        
+        const getScoreTextColor = (score) => {
+            if (score >= 75) return 'score-text-green';
+            if (score >= 40) return 'score-text-amber';
+            return 'score-text-red';
+        }
+
+        // --- REACT CHART COMPONENTS ---
+        const ChartComponent = ({ type, data, options }) => {
+            const chartRef = useRef(null);
+            const chartInstance = useRef(null);
+
+            useEffect(() => {
+                if (chartRef.current) {
+                    if (chartInstance.current) {
+                        chartInstance.current.destroy();
+                    }
+                    const ctx = chartRef.current.getContext('2d');
+                    chartInstance.current = new Chart(ctx, { type, data, options });
+                }
+                return () => {
+                    if (chartInstance.current) {
+                        chartInstance.current.destroy();
+                    }
+                };
+            }, [type, data, options]);
+
+            return <canvas ref={chartRef}></canvas>;
+        };
+
+        // --- UI COMPONENTS ---
+        const Sidebar = () => (
+            <aside className="w-full md:w-1/4 lg:w-1/5 bg-slate-800 text-white p-6 fixed top-0 left-0 h-full overflow-y-auto hidden md:block">
+                <div className="flex items-center space-x-3 mb-8">
+                    <svg className="w-10 h-10 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
+                    <h1 className="text-2xl font-bold">Zero Trust Enabled AppSec</h1>
+                </div>
+                <div>
+                    <h2 className="text-lg font-semibold text-indigo-300 mb-2">About this Assessment</h2>
+                    <p className="text-sm text-slate-300 mb-6">
+                        This tool measures your organization's application security maturity against the OWASP SAMM framework, with a specific focus on aligning practices with the NIST Zero Trust Architecture principles.
+                    </p>
+                    <h3 className="font-semibold text-indigo-300 mb-2">Further Reading</h3>
+                    <ul className="list-disc list-inside text-sm text-slate-300 space-y-2">
+                        {assessmentData.frameworks.map(fw => (
+                            <li key={fw.name}>
+                                <a href={fw.url} target="_blank" rel="noopener noreferrer" className="underline hover:text-indigo-400 transition-colors">
+                                    {fw.name}
+                                </a>
+                            </li>
+                        ))}
+                    </ul>
+                </div>
+            </aside>
+        );
+
+        const MainHeader = ({ answered, total, onSubmit }) => {
+            const percentage = total > 0 ? (answered / total) * 100 : 0;
+            const allAnswered = answered === total;
+
+            return (
+                <div className="bg-white/80 backdrop-blur-sm sticky top-0 z-10 p-4 mb-6 rounded-lg shadow-md border">
+                    <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+                        <div className="w-full md:w-auto">
+                            <h2 className="text-xl font-bold text-slate-700">Assessment Progress</h2>
+                            <p className="text-sm text-slate-500">{answered} of {total} questions answered</p>
+                        </div>
+                        <div className="w-full md:flex-1">
+                            <div className="w-full bg-slate-200 rounded-full h-3.5">
+                                <div className="bg-indigo-600 h-3.5 rounded-full transition-all duration-500 flex items-center justify-center text-white text-xs" style={{ width: `${percentage}%` }}>
+                                   {percentage > 10 && `${Math.round(percentage)}%`}
+                                </div>
+                            </div>
+                        </div>
+                        <div className="w-full md:w-auto">
+                            <button
+                                onClick={onSubmit}
+                                className={`w-full px-6 py-3 rounded-lg font-bold text-white text-md transition-all duration-300 ${
+                                    allAnswered 
+                                    ? 'bg-green-600 hover:bg-green-700 shadow-lg transform hover:scale-105' 
+                                    : 'bg-indigo-600 hover:bg-indigo-700'
+                                }`}
+                            >
+                                {allAnswered ? 'Generate Executive Report' : 'Review Incomplete Questions'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+        
+        const Introduction = () => (
+            <div className="bg-white rounded-xl shadow-lg mb-8 p-6 md:p-8 border-l-4 border-indigo-500">
+                <h2 className="text-2xl font-bold text-slate-800 mb-3">Why Adopt a Zero Trust Strategy for Application Security?</h2>
+                <p className="text-slate-600 leading-relaxed">
+                    Traditional security models relied on a "castle-and-moat" approach, trusting everything inside the network perimeter. In today's landscape of cloud services, remote work, and sophisticated threats, this is no longer sufficient.
+                </p>
+                <p className="text-slate-600 leading-relaxed mt-4">
+                    A **Zero Trust** model shifts the paradigm to **"never trust, always verify."** It assumes that threats can exist both outside and inside the network. This assessment will help you evaluate how well your application security practices align with this modern, more resilient approach to security.
+                </p>
+            </div>
+        );
+
+        const CategoryCard = ({ category, children }) => (
+            <div className="bg-white rounded-xl shadow-lg mb-8 overflow-hidden">
+                <div className="p-6 bg-gradient-to-r from-slate-700 to-slate-800 text-white">
+                    <h2 className="text-3xl font-bold">{category.name}</h2>
+                    <p className="text-slate-300 mt-1">Business Function</p>
+                </div>
+                <div className="p-6 md:p-8">{children}</div>
+            </div>
+        );
+
+        const PracticeCard = ({ practice, children }) => (
+            <div className="border border-slate-200 rounded-lg mb-6">
+                <div className="p-4 bg-slate-100 border-b border-slate-200">
+                    <h3 className="text-xl font-semibold">{practice.name}</h3>
+                    <div className="flex flex-wrap gap-2 mt-2">
+                        {practice.nist_tenants.map(tenant => (
+                            <span key={tenant} className="bg-indigo-100 text-indigo-800 text-xs font-semibold px-2.5 py-0.5 rounded-full">{tenant}</span>
+                        ))}
+                    </div>
+                </div>
+                <div className="p-4 space-y-4">{children}</div>
+            </div>
+        );
+
+        const Question = ({ question, answer, onAnswer, isUnanswered }) => {
+            const options = [
+                { label: 'Yes', value: 'yes', class: 'bg-green-100 text-green-800 border-green-300', activeClass: 'bg-green-600 text-white' },
+                { label: 'Partial', value: 'partial', class: 'bg-yellow-100 text-yellow-800 border-yellow-300', activeClass: 'bg-yellow-500 text-white' },
+                { label: 'Planned', value: 'planned', class: 'bg-blue-100 text-blue-800 border-blue-300', activeClass: 'bg-blue-600 text-white' },
+                { label: 'No', value: 'no', class: 'bg-red-100 text-red-800 border-red-300', activeClass: 'bg-red-600 text-white' },
+                { label: "I Don't Know", value: 'i_dont_know', class: 'bg-slate-200 text-slate-800 border-slate-300', activeClass: 'bg-slate-600 text-white' },
+            ];
+            
+            const questionRef = useRef(null);
+
+            const getOptionClass = (opt) => {
+                const baseClass = "px-4 py-2 rounded-md text-sm font-medium cursor-pointer transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 border";
+                if (answer === opt.value) {
+                    return `${baseClass} ${opt.activeClass} shadow-md`;
+                }
+                return `${baseClass} ${opt.class} hover:bg-opacity-80`;
+            };
+
+            return (
+                <div id={`question-${question.id}`} ref={questionRef} className={`p-4 border-l-4 transition-colors duration-300 rounded-r-lg ${isUnanswered ? 'bg-yellow-50 border-yellow-400' : 'bg-slate-50/50 border-slate-200 hover:border-indigo-500'}`}>
+                    <p className="text-slate-800 mb-3">{question.text}</p>
+                    <div className="flex flex-wrap gap-2">
+                        {options.map(opt => (
+                            <button key={opt.value} onClick={() => onAnswer(question.id, opt.value)} className={getOptionClass(opt)}>
+                                {opt.label}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            );
+        };
+        
+        const UnansweredModal = ({ questions, onJumpTo, onClose }) => (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                <div className="bg-white rounded-lg shadow-2xl max-w-2xl w-full max-h-[80vh] flex flex-col">
+                    <div className="p-6 border-b">
+                        <h3 className="text-2xl font-bold text-slate-800">Incomplete Questions</h3>
+                        <p className="text-slate-500">Please answer the following questions to generate the report.</p>
+                    </div>
+                    <div className="p-6 overflow-y-auto">
+                        <ul className="space-y-2">
+                            {questions.map(q => (
+                                <li key={q.id} >
+                                    <a href="#" onClick={(e) => { e.preventDefault(); onJumpTo(q.id); }} className="block p-3 rounded-md hover:bg-indigo-50 text-indigo-700 font-medium transition-colors">
+                                        <span className="font-bold">{q.practiceName}:</span> {q.text}
+                                    </a>
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                    <div className="p-4 bg-slate-50 border-t text-right">
+                         <button onClick={onClose} className="px-6 py-2 bg-slate-600 text-white rounded-lg hover:bg-slate-700">Close</button>
+                    </div>
+                </div>
+            </div>
+        );
+
+        const StatusOverview = ({ data, answers, sammScores }) => {
+            const nistStatus = useMemo(() => {
+                const tenantScores = {};
+                const tenantMaxScores = {};
+                const tenantPractices = {};
+                
+                const allTenants = Array.from(new Set(data.categories.flatMap(c => c.practices.flatMap(p => p.nist_tenants)))).sort();
+
+                allTenants.forEach(t => {
+                    tenantScores[t] = 0;
+                    tenantMaxScores[t] = 0;
+                    tenantPractices[t] = new Set();
+                });
+
+                data.categories.forEach(cat => {
+                    cat.practices.forEach(prac => {
+                        let practiceScore = 0;
+                        let practiceMaxScore = 0;
+                        
+                        prac.questions.forEach(q => {
+                            practiceScore += answers[q.id] ? q.maturity_map[answers[q.id]] : 0;
+                            practiceMaxScore += q.maturity_map['yes'];
+                        });
+                        
+                        prac.nist_tenants.forEach(tenant => {
+                            tenantScores[tenant] += practiceScore;
+                            tenantMaxScores[tenant] += practiceMaxScore;
+                            tenantPractices[tenant].add(prac.name);
+                        });
+                    });
+                });
+                
+                return allTenants.map(tenant => ({
+                    name: tenant,
+                    score: tenantMaxScores[tenant] > 0 ? (tenantScores[tenant] / tenantMaxScores[tenant]) * 100 : 0,
+                    practices: Array.from(tenantPractices[tenant]),
+                }));
+
+            }, [data, answers]);
+
+            const sammStatus = useMemo(() => {
+                return Object.entries(sammScores).map(([name, score]) => ({ name, score }));
+            }, [sammScores]);
+            
+            const StatusList = ({ title, items }) => {
+                const passed = items.filter(i => i.score >= 50);
+                const failed = items.filter(i => i.score < 50);
+
+                return (
+                    <div className="bg-white p-4 rounded-lg border">
+                        <h4 className="text-lg font-bold text-slate-800 mb-4">{title}</h4>
+                        <div>
+                            <h5 className="font-semibold text-green-600 mb-2">Passed (50% or more)</h5>
+                            <div className="flex flex-wrap gap-2">
+                                {passed.length > 0 ? passed.map(p => <span key={p.name} className="bg-green-100 text-green-800 text-sm font-medium px-3 py-1 rounded-full">{p.name}</span>) : <p className="text-sm text-slate-500">None</p>}
+                            </div>
+                        </div>
+                        <div className="mt-4">
+                            <h5 className="font-semibold text-red-600 mb-2">Needs Improvement (less than 50%)</h5>
+                             <div className="flex flex-wrap gap-2">
+                                {failed.length > 0 ? failed.map(f => <span key={f.name} className="bg-red-100 text-red-800 text-sm font-medium px-3 py-1 rounded-full">{f.name}</span>) : <p className="text-sm text-slate-500">None</p>}
+                            </div>
+                        </div>
+                    </div>
+                );
+            };
+
+            return (
+                <div className="bg-slate-50 rounded-lg p-6 mt-8">
+                    <h3 className="text-2xl font-bold text-slate-700 mb-4 text-center">Maturity Status Overview</h3>
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <StatusList title="SAMM Category Status" items={sammStatus} />
+                        <StatusList title="NIST Tenant Status" items={nistStatus} />
+                    </div>
+                </div>
+            )
+        };
+        
+        const NistTenantOverview = ({ data, answers }) => {
+             const nistData = useMemo(() => {
+                const tenantScores = {};
+                const tenantMaxScores = {};
+                const tenantPractices = {};
+                
+                const allTenants = Array.from(new Set(data.categories.flatMap(c => c.practices.flatMap(p => p.nist_tenants)))).sort();
+
+                allTenants.forEach(t => {
+                    tenantScores[t] = 0;
+                    tenantMaxScores[t] = 0;
+                    tenantPractices[t] = new Set();
+                });
+
+                data.categories.forEach(cat => {
+                    cat.practices.forEach(prac => {
+                        let practiceScore = 0;
+                        let practiceMaxScore = 0;
+                        
+                        prac.questions.forEach(q => {
+                            practiceScore += answers[q.id] ? q.maturity_map[answers[q.id]] : 0;
+                            practiceMaxScore += q.maturity_map['yes'];
+                        });
+                        
+                        prac.nist_tenants.forEach(tenant => {
+                            // Attribute the total score of the practice to each tenant it belongs to
+                            tenantScores[tenant] += practiceScore;
+                            tenantMaxScores[tenant] += practiceMaxScore;
+                            tenantPractices[tenant].add(prac.name);
+                        });
+                    });
+                });
+                
+                return allTenants.map(tenant => ({
+                    name: tenant,
+                    score: tenantMaxScores[tenant] > 0 ? (tenantScores[tenant] / tenantMaxScores[tenant]) * 100 : 0,
+                    practices: Array.from(tenantPractices[tenant]).sort(),
+                }));
+
+            }, [data, answers]);
+            
+            return (
+                 <div className="bg-slate-50 rounded-lg p-6 mt-8">
+                    <h3 className="text-2xl font-bold text-slate-700 mb-2 text-center">Zero Trust Tenant Overview</h3>
+                    <p className="text-slate-500 text-center mb-6 max-w-3xl mx-auto">This view shows your maturity score for each NIST Zero Trust Tenant and the AppSec practices that support it.</p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {nistData.map(tenant => (
+                            <div key={tenant.name} className="border border-slate-200 rounded-lg bg-white shadow-sm flex flex-col">
+                                <div className="p-4 flex justify-between items-center border-b border-slate-200">
+                                    <h4 className="text-lg font-bold text-slate-800">{tenant.name}</h4>
+                                    <p className={`text-2xl font-bold ${getScoreTextColor(tenant.score)}`}>{tenant.score.toFixed(0)}%</p>
+                                </div>
+                                <div className="p-4 flex-grow">
+                                    <h5 className="text-sm font-semibold text-slate-600 mb-2">Supporting Practices:</h5>
+                                    <ul className="list-disc list-inside text-sm text-slate-700 space-y-1">
+                                       {tenant.practices.map(p => <li key={p}>{p}</li>)}
+                                    </ul>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )
+        }
+
+        const Report = ({ answers, data, onBack }) => {
+            const reportRef = useRef(null);
+            const [isDownloading, setIsDownloading] = useState(false);
+
+            const handleDownloadPdf = () => {
+                setIsDownloading(true);
+                const { jsPDF } = window.jspdf;
+                const reportElement = reportRef.current;
+                const buttonsElement = reportElement.querySelector('#report-buttons');
+                
+                // Temporarily hide buttons
+                buttonsElement.style.display = 'none';
+
+                html2canvas(reportElement, { 
+                    scale: 2,
+                    windowWidth: reportElement.scrollWidth,
+                    windowHeight: reportElement.scrollHeight
+                }).then(canvas => {
+                    const imgData = canvas.toDataURL('image/png');
+                    const imgWidth = 210; // A4 width in mm
+                    const pageHeight = 297; // A4 height in mm
+                    const imgHeight = canvas.height * imgWidth / canvas.width;
+                    let heightLeft = imgHeight;
+                    
+                    const pdf = new jsPDF('p', 'mm');
+                    let position = 0;
+
+                    pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+                    heightLeft -= pageHeight;
+
+                    while (heightLeft >= 0) {
+                      position = heightLeft - imgHeight;
+                      pdf.addPage();
+                      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+                      heightLeft -= pageHeight;
+                    }
+                    
+                    pdf.save('ZT-Enabled-AppSec-Maturity-Report.pdf');
+                    
+                    // Show buttons again
+                    buttonsElement.style.display = 'flex';
+                    setIsDownloading(false);
+                });
+            };
+
+            const scores = useMemo(() => {
+                let categoryScores = {};
+                let practiceScores = {};
+                let totalScore = 0;
+                let totalMaxScore = 0;
+                let recommendations = { highImpact: [], continuous: [] };
+                let answerCounts = { yes: 0, partial: 0, planned: 0, no: 0, i_dont_know: 0 };
+
+                data.categories.forEach(category => {
+                    let categoryScore = 0;
+                    let categoryMaxScore = 0;
+                    
+                    category.practices.forEach(practice => {
+                        let practiceScore = 0;
+                        let practiceMaxScore = 0;
+                        practice.questions.forEach(question => {
+                            const answer = answers[question.id];
+                            const score = answer ? question.maturity_map[answer] : 0;
+                            const maxScore = question.maturity_map['yes'];
+                            
+                            practiceScore += score;
+                            practiceMaxScore += maxScore;
+
+                            if(answer) answerCounts[answer]++;
+
+                            const recommendation = {
+                                text: question.recommendations[0],
+                                category: category.name,
+                                practice: practice.name,
+                                question: question.text,
+                                answer: answer,
+                            };
+
+                            if (answer === 'no' || answer === 'i_dont_know') {
+                                recommendations.highImpact.push(recommendation);
+                            } else if (answer === 'partial' || answer === 'planned') {
+                                recommendations.continuous.push(recommendation);
+                            }
+                        });
+                        
+                        categoryScore += practiceScore;
+                        categoryMaxScore += practiceMaxScore;
+                        practiceScores[practice.name] = practiceMaxScore > 0 ? (practiceScore / practiceMaxScore) * 100 : 0;
+                    });
+                    
+                    totalScore += categoryScore;
+                    totalMaxScore += categoryMaxScore;
+                    categoryScores[category.name] = categoryMaxScore > 0 ? (categoryScore / categoryMaxScore) * 100 : 0;
+                });
+
+                const overallMaturity = totalMaxScore > 0 ? (totalScore / totalMaxScore) * 100 : 0;
+                
+                return { overallMaturity, categoryScores, practiceScores, recommendations, answerCounts };
+            }, [answers, data]);
+
+            const radarChartData = {
+                labels: Object.keys(scores.categoryScores),
+                datasets: [{
+                    label: 'Maturity Score (%)',
+                    data: Object.values(scores.categoryScores),
+                    backgroundColor: 'rgba(79, 70, 229, 0.2)',
+                    borderColor: 'rgba(79, 70, 229, 1)',
+                    borderWidth: 2,
+                }],
+            };
+
+            const barChartData = {
+                labels: Object.keys(scores.practiceScores).sort((a,b) => scores.practiceScores[b] - scores.practiceScores[a]),
+                datasets: [{
+                    label: 'Maturity Score (%)',
+                    data: Object.keys(scores.practiceScores).sort((a,b) => scores.practiceScores[b] - scores.practiceScores[a]).map(p => scores.practiceScores[p]),
+                    backgroundColor: Object.keys(scores.practiceScores).sort((a,b) => scores.practiceScores[b] - scores.practiceScores[a]).map(p => getScoreColor(scores.practiceScores[p])),
+                    borderWidth: 1,
+                }],
+            };
+
+            const doughnutChartData = {
+                labels: ['Yes', 'Partial', 'Planned', 'No', "I Don't Know"],
+                datasets: [{
+                    data: [scores.answerCounts.yes, scores.answerCounts.partial, scores.answerCounts.planned, scores.answerCounts.no, scores.answerCounts.i_dont_know],
+                    backgroundColor: ['#10B981', '#F59E0B', '#3B82F6', '#EF4444', '#6B7280'],
+                }]
+            };
+
+            const RecommendationCard = ({ rec }) => {
+                const colors = {
+                    no: 'border-red-500',
+                    i_dont_know: 'border-slate-500',
+                    planned: 'border-blue-500',
+                    partial: 'border-yellow-500',
+                };
+                return (
+                    <div className={`p-4 rounded-lg border-l-4 ${colors[rec.answer]} bg-slate-50`}>
+                        <p className="font-semibold text-slate-800">{rec.text}</p>
+                        <p className="text-sm text-slate-500 mt-1">
+                            Area: <span className="font-medium">{rec.category} &gt; {rec.practice}</span>
+                        </p>
+                         <p className="text-xs text-slate-400 mt-1">
+                            Question: "{rec.question}" (Answered: <span className="font-medium capitalize">{rec.answer.replace(/_/g, ' ')}</span>)
+                        </p>
+                    </div>
+                );
+            };
+
+            return (
+                <div className="bg-white rounded-xl shadow-lg p-6 md:p-8">
+                    <div ref={reportRef}>
+                        <div className="flex justify-between items-start mb-8">
+                            <div>
+                                <h2 className="text-4xl font-extrabold text-slate-800 mb-2">Zero Trust Enabled AppSec Maturity</h2>
+                                <p className="text-lg text-slate-500">Executive Summary</p>
+                            </div>
+                            <div id="report-buttons" className="flex gap-2">
+                                <button onClick={onBack} className="bg-slate-600 text-white px-4 py-2 rounded-lg hover:bg-slate-700 transition duration-300 flex items-center space-x-2">
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clipRule="evenodd" /></svg>
+                                    <span>Back</span>
+                                </button>
+                                <button onClick={handleDownloadPdf} disabled={isDownloading} className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition duration-300 flex items-center space-x-2 disabled:bg-indigo-300">
+                                   <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M17.707 9.293a1 1 0 010 1.414l-7 7a1 1 0 01-1.414 0l-7-7a1 1 0 011.414-1.414L9 14.586V3a1 1 0 012 0v11.586l4.293-4.293a1 1 0 011.414 0z" /></svg>
+                                    <span>{isDownloading ? 'Downloading...' : 'Download PDF'}</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Top Row KPIs */}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                            <div className="bg-slate-50 rounded-lg p-6 flex flex-col items-center justify-center text-center">
+                                <h3 className="text-xl font-semibold text-slate-600 mb-2">Overall Maturity</h3>
+                                <p className="text-6xl font-bold text-indigo-600">{scores.overallMaturity.toFixed(1)}%</p>
+                            </div>
+                            <div className="md:col-span-2 bg-slate-50 rounded-lg p-6">
+                                 <h3 className="text-xl font-semibold text-slate-600 mb-4 text-center">Answer Distribution</h3>
+                                 <div className="h-48">
+                                    <ChartComponent type="doughnut" data={doughnutChartData} options={{ maintainAspectRatio: false, plugins: { legend: { position: 'right' } } }} />
+                                 </div>
+                            </div>
+                        </div>
+                        
+                        {/* Status Overview */}
+                        <StatusOverview data={data} answers={answers} sammScores={scores.categoryScores} />
+
+                        {/* Detailed Charts */}
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-8">
+                            <div className="bg-slate-50 rounded-lg p-6">
+                                <h3 className="text-xl font-semibold text-slate-600 mb-4 text-center">SAMM Category Maturity</h3>
+                                <div className="h-80">
+                                    <ChartComponent type="radar" data={radarChartData} options={{ maintainAspectRatio: false, scales: { r: { beginAtZero: true, max: 100 } } }} />
+                                </div>
+                            </div>
+                            <div className="bg-slate-50 rounded-lg p-6">
+                                <h3 className="text-xl font-semibold text-slate-600 mb-4 text-center">Practice Maturity (Sorted)</h3>
+                                <div className="h-96">
+                                    <ChartComponent type="bar" data={barChartData} options={{ maintainAspectRatio: false, indexAxis: 'y', scales: { x: { beginAtZero: true, max: 100 } }, plugins: { legend: { display: false } } }} />
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* NEW: Tenant Overview Cards */}
+                        <NistTenantOverview data={data} answers={answers} />
+
+                        {/* Recommendations */}
+                        <div className="mt-8">
+                            <h3 className="text-3xl font-bold text-slate-700 mb-6">Prioritized Mitigation Plan</h3>
+                            <div className="mb-8">
+                                <h4 className="text-xl font-semibold text-red-700 mb-4">High-Impact Actions</h4>
+                                <div className="space-y-4">
+                                    {scores.recommendations.highImpact.length > 0 ? scores.recommendations.highImpact.map((rec, i) => <RecommendationCard key={i} rec={rec} />) : <p className="text-sm text-slate-500">No high-impact items identified. Great work!</p>}
+                                </div>
+                            </div>
+                            <div>
+                                <h4 className="text-xl font-semibold text-blue-700 mb-4">Continuous Improvement</h4>
+                                 <div className="space-y-4">
+                                    {scores.recommendations.continuous.length > 0 ? scores.recommendations.continuous.map((rec, i) => <RecommendationCard key={i} rec={rec} />) : <p className="text-sm text-slate-500">No items for continuous improvement identified.</p>}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+
+        // --- MAIN APP COMPONENT ---
+        function App() {
+            const [answers, setAnswers] = useState({});
+            const [isReportView, setReportView] = useState(false);
+            const [data, setData] = useState(null);
+            const [showUnansweredModal, setShowUnansweredModal] = useState(false);
+            
+            const allQuestions = useMemo(() => {
+                if (!data) return [];
+                return data.categories.flatMap(cat => 
+                    cat.practices.flatMap(prac => 
+                        prac.questions.map(q => ({...q, practiceName: prac.name, categoryName: cat.name}))
+                    )
+                );
+            }, [data]);
+
+            const unansweredQuestions = useMemo(() => {
+                return allQuestions.filter(q => !answers.hasOwnProperty(q.id));
+            }, [answers, allQuestions]);
+
+
+            useEffect(() => {
+                setData(assessmentData);
+            }, []);
+
+            const handleAnswer = (questionId, answer) => {
+                setAnswers(prev => ({ ...prev, [questionId]: answer }));
+            };
+            
+            const jumpToQuestion = (questionId) => {
+                const element = document.getElementById(`question-${questionId}`);
+                if (element) {
+                    element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    element.classList.add('highlight-jump');
+                    setTimeout(() => element.classList.remove('highlight-jump'), 2000);
+                }
+                setShowUnansweredModal(false);
+            };
+
+            const handleSubmit = () => {
+                if (unansweredQuestions.length > 0) {
+                    setShowUnansweredModal(true);
+                } else {
+                    setReportView(true);
+                    window.scrollTo(0, 0);
+                }
+            };
+
+            const handleBackToQuestions = () => {
+                setReportView(false);
+                window.scrollTo(0, 0);
+            };
+
+            if (!data) {
+                return <div className="flex justify-center items-center h-screen text-lg font-semibold">Loading Assessment...</div>;
+            }
+
+            return (
+                <div className="flex">
+                    <Sidebar />
+                    <main className="w-full md:ml-[25%] lg:ml-[20%] bg-slate-50 min-h-screen">
+                        <div className="p-4 md:p-8">
+                            {isReportView ? (
+                                <Report answers={answers} data={data} onBack={handleBackToQuestions} />
+                            ) : (
+                                <>
+                                    {showUnansweredModal && <UnansweredModal questions={unansweredQuestions} onJumpTo={jumpToQuestion} onClose={() => setShowUnansweredModal(false)} />}
+                                    <MainHeader answered={Object.keys(answers).length} total={allQuestions.length} onSubmit={handleSubmit} />
+                                    <Introduction />
+                                    {data.categories.map(category => (
+                                        <CategoryCard key={category.id} category={category}>
+                                            {category.practices.map(practice => (
+                                                <PracticeCard key={practice.id} practice={practice}>
+                                                    {practice.questions.map(question => (
+                                                        <Question
+                                                            key={question.id}
+                                                            question={question}
+                                                            answer={answers[question.id]}
+                                                            onAnswer={handleAnswer}
+                                                            isUnanswered={!answers.hasOwnProperty(question.id)}
+                                                        />
+                                                    ))}
+                                                </PracticeCard>
+                                            ))}
+                                        </CategoryCard>
+                                    ))}
+                                </>
+                            )}
+                        </div>
+                    </main>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+
+    </script>
+</body>
+</html>
