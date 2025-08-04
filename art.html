@@ -1,0 +1,485 @@
+import { useState, useEffect } from 'react';
+
+// Using lucide-react for professional icons
+import {
+  Brain,
+  Shield,
+  Target,
+  Search,
+  Box,
+  Image,
+  FileText,
+  Table,
+  LineChart,
+  Code,
+  CheckCircle,
+  XCircle,
+  Settings,
+  Database,
+  Aperture,
+  Tally3,
+  Text,
+} from 'lucide-react';
+
+const App = () => {
+  const [knowledge, setKnowledge] = useState('');
+  const [goal, setGoal] = useState('');
+  const [evasionType, setEvasionType] = useState('');
+  const [dataType, setDataType] = useState('');
+  const [recommendations, setRecommendations] = useState(null);
+  const [showForm, setShowForm] = useState(true);
+  const [isFormComplete, setIsFormComplete] = useState(false);
+  
+  // State for dynamic input fields
+  const [dynamicInputs, setDynamicInputs] = useState({
+    model_type: '',
+    model_endpoint: '',
+    api_key: '',
+    epsilon: '',
+    max_iter: '',
+    num_queries: '',
+    image_shape: '',
+    text_max_length: '',
+    tabular_features: '',
+  });
+
+  const handleInputChange = (e) => {
+    const { name, value } = e.target;
+    setDynamicInputs(prev => ({ ...prev, [name]: value }));
+  };
+
+  const validateForm = () => {
+    if (!knowledge || !goal || !dataType) {
+      return false;
+    }
+    if (goal === 'evasion' && !evasionType) {
+      return false;
+    }
+
+    // You can add more specific validation here for the dynamic fields if needed
+    // For now, let's just check if the main selections are made
+    return true;
+  };
+
+  useEffect(() => {
+    setIsFormComplete(validateForm());
+  }, [knowledge, goal, evasionType, dataType]);
+
+  // Define the core data structure for recommendations
+  const attackData = {
+    'evasion': {
+      'white-box': {
+        'images': {
+          'untargeted': [
+            { name: 'Projected Gradient Descent (PGD)', desc: 'The "gold standard" for evaluating robustness. A powerful, iterative white-box attack that is hard to defend against.' },
+            { name: 'Fast Gradient Method (FGM)', desc: 'A fast, one-step gradient-based attack. Good for a quick baseline test.' },
+            { name: 'Carlini & Wagner (C&W) L_2', desc: 'An optimization-based attack known for its effectiveness, often defeating defensive distillation.' },
+          ],
+          'targeted': [
+            { name: 'Projected Gradient Descent (PGD)', desc: 'A powerful iterative attack adapted for a specific target class. The "gold standard" for targeted attacks.' },
+            { name: 'Carlini & Wagner (C&W) L_inf', desc: 'A highly effective, optimization-based attack that finds the minimum perturbation to achieve a specific misclassification.' },
+            { name: 'Universal Adversarial Perturbation', desc: 'Generates a single perturbation that can fool the model across many different inputs.' },
+          ],
+        },
+        'text': {
+          'untargeted': [
+            { name: 'TextAttack', desc: 'A framework-agnostic attack that finds semantically similar words to cause misclassification.' },
+            { name: 'DeepWordBug', desc: 'A white-box attack that finds the most critical characters to perturb to cause model misclassification.'},
+          ],
+          'targeted': [
+            { name: 'HotFlip', desc: 'A white-box attack that flips characters in a text to change the model\'s output to a specific target class.'},
+          ],
+        },
+        'tabular': {
+            'untargeted': [
+              { name: 'HopSkipJumpAttack', desc: 'A decision-based attack that also works in a white-box setting for non-differentiable models like tree ensembles.'}
+            ],
+            'targeted': [
+              { name: 'Decision Tree Attack', desc: 'Exploits the structure of decision tree models to find adversarial examples.'}
+            ]
+        },
+      },
+      'black-box': {
+        'images': {
+          'untargeted': [
+            { name: 'HopSkipJumpAttack', desc: 'A powerful decision-based attack that only requires the final prediction label, making it highly effective against black-box models.' },
+            { name: 'SquareAttack', desc: 'An efficient score-based attack that minimizes queries to find a successful adversarial example.' },
+          ],
+          'targeted': [
+            { name: 'Zeroth-Order Optimization (ZOO)', desc: 'A query-based attack that approximates gradients to achieve a specific misclassification without internal knowledge.' },
+            { name: 'HopSkipJumpAttack (Targeted)', desc: 'An adaptation of the decision-based attack to achieve a specific target class.' },
+          ],
+        },
+        'text': {
+          'untargeted': [
+            { name: 'TextAttack (Black-box)', desc: 'Leverages synonym replacement and other techniques to fool a model with only input/output access.'},
+          ],
+          'targeted': [
+            { name: 'HotFlip (Black-box)', desc: 'A query-based attack that attempts to find the most impactful character flips to achieve a targeted output.'}
+          ],
+        },
+        'tabular': {
+            'untargeted': [
+              { name: 'HopSkipJumpAttack', desc: 'A robust decision-based attack that is suitable for tabular data and black-box threat models.'}
+            ],
+            'targeted': [
+              { name: 'Zeroth-Order Optimization (ZOO)', desc: 'Approximates gradients to find targeted adversarial examples against black-box tabular models.'}
+            ]
+        }
+      },
+    },
+    'poisoning': {
+      'images': [
+        { name: 'Backdoor Attack (BadNets)', desc: 'The attacker injects malicious "backdoored" data into the training set to control the model\'s behavior under specific conditions.' },
+      ],
+    },
+    'extraction': {
+      'black-box': [
+        { name: 'Knockoff Attack', desc: 'The attacker queries your model with unlabeled data to train a surrogate model that mimics its behavior and potentially reveals its architecture.' },
+        { name: 'Functionally Equivalent Extraction', desc: 'A black-box attack that trains a copycat model with the same functionality as the target model.' },
+      ],
+    },
+    'inference': {
+      'black-box': [
+        { name: 'Membership Inference Attack', desc: 'An attack to determine if a specific data record was part of the model\'s training set.' },
+        { name: 'Attribute Inference Attack', desc: 'A privacy-focused attack that tries to infer private attributes from the training data.' },
+      ],
+    },
+  };
+
+  const getRecommendations = () => {
+    // Hide the form and show the recommendations
+    setShowForm(false);
+    
+    let result = [];
+    if (goal === 'evasion') {
+      const evasionAttacks = attackData[goal]?.[knowledge]?.[dataType]?.[evasionType];
+      if (evasionAttacks) {
+        result = evasionAttacks;
+      }
+    } else if (goal === 'poisoning' && dataType === 'images') {
+        result = attackData[goal]?.[dataType];
+    } else if (goal === 'extraction' && knowledge === 'black-box') {
+        result = attackData[goal]?.[knowledge];
+    } else if (goal === 'inference' && knowledge === 'black-box') {
+        result = attackData[goal]?.[knowledge];
+    }
+    setRecommendations(result);
+  };
+  
+  const resetForm = () => {
+    setKnowledge('');
+    setGoal('');
+    setEvasionType('');
+    setDataType('');
+    setRecommendations(null);
+    setDynamicInputs({
+      model_type: '',
+      model_endpoint: '',
+      api_key: '',
+      epsilon: '',
+      max_iter: '',
+      num_queries: '',
+      image_shape: '',
+      text_max_length: '',
+      tabular_features: '',
+    });
+    setShowForm(true);
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-900 text-white flex items-center justify-center p-4">
+      <div className="w-full max-w-4xl bg-gray-800 rounded-xl shadow-2xl p-8">
+        <h1 className="text-3xl sm:text-4xl font-bold text-center mb-6 text-teal-400">IBM ART Attack Recommender</h1>
+        <p className="text-center text-gray-400 mb-8">
+          Answer a few questions about your threat model and ML pipeline to get a tailored list of applicable adversarial attacks from the IBM ART library.
+        </p>
+
+        {showForm && (
+        <form onSubmit={(e) => { e.preventDefault(); getRecommendations(); }} className="space-y-8">
+          
+          {/* Question 1: Knowledge */}
+          <div>
+            <h2 className="text-xl font-semibold mb-4 flex items-center text-gray-200">
+              <Code className="h-6 w-6 mr-2 text-teal-400" />
+              1. Knowledge
+            </h2>
+            <p className="text-sm text-gray-400 mb-4">What level of access is assumed for this test?</p>
+            <div className="grid sm:grid-cols-2 gap-4">
+              <div 
+                className={`p-5 rounded-lg border-2 cursor-pointer transition-colors duration-200 ${knowledge === 'white-box' ? 'border-teal-400 bg-gray-700' : 'border-gray-700 hover:border-gray-500'}`}
+                onClick={() => setKnowledge('white-box')}
+              >
+                <input type="radio" name="knowledge" value="white-box" checked={knowledge === 'white-box'} className="hidden" onChange={() => {}} />
+                <div className="flex items-center">
+                  <Brain className="h-8 w-8 text-white mr-3" />
+                  <div>
+                    <p className="font-medium text-lg">White-box</p>
+                    <p className="text-sm text-gray-400">Full access to model internals (architecture, weights, gradients).</p>
+                  </div>
+                </div>
+              </div>
+              <div
+                className={`p-5 rounded-lg border-2 cursor-pointer transition-colors duration-200 ${knowledge === 'black-box' ? 'border-teal-400 bg-gray-700' : 'border-gray-700 hover:border-gray-500'}`}
+                onClick={() => setKnowledge('black-box')}
+              >
+                <input type="radio" name="knowledge" value="black-box" checked={knowledge === 'black-box'} className="hidden" onChange={() => {}} />
+                <div className="flex items-center">
+                  <Box className="h-8 w-8 text-white mr-3" />
+                  <div>
+                    <p className="font-medium text-lg">Black-box</p>
+                    <p className="text-sm text-gray-400">No access to internals, only input/output queries are possible.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Question 2: Goal */}
+          <div>
+            <h2 className="text-xl font-semibold mb-4 flex items-center text-gray-200">
+              <Target className="h-6 w-6 mr-2 text-teal-400" />
+              2. Goal
+            </h2>
+            <p className="text-sm text-gray-400 mb-4">What is the objective of the test?</p>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              {['evasion', 'poisoning', 'extraction', 'inference'].map(item => (
+                <div
+                  key={item}
+                  className={`p-4 rounded-lg border-2 text-center cursor-pointer transition-colors duration-200 ${goal === item ? 'border-teal-400 bg-gray-700' : 'border-gray-700 hover:border-gray-500'}`}
+                  onClick={() => setGoal(item)}
+                >
+                  <input type="radio" name="goal" value={item} checked={goal === item} className="hidden" onChange={() => {}} />
+                  <p className="font-medium capitalize">{item}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Conditional Evasion Sub-questions */}
+          {goal === 'evasion' && (
+            <div>
+              <h2 className="text-xl font-semibold mb-4 flex items-center text-gray-200">
+                <Search className="h-6 w-6 mr-2 text-teal-400" />
+                3. Evasion Details
+              </h2>
+              <p className="text-sm text-gray-400 mb-4">Is the evasion test targeted?</p>
+              <div className="grid grid-cols-2 gap-4">
+                {['untargeted', 'targeted'].map(item => (
+                  <div
+                    key={item}
+                    className={`p-4 rounded-lg border-2 text-center cursor-pointer transition-colors duration-200 ${evasionType === item ? 'border-teal-400 bg-gray-700' : 'border-gray-700 hover:border-gray-500'}`}
+                    onClick={() => setEvasionType(item)}
+                  >
+                    <input type="radio" name="evasion_type" value={item} checked={evasionType === item} className="hidden" onChange={() => {}} />
+                    <p className="font-medium capitalize">{item}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Question 4: Data Type */}
+          <div>
+            <h2 className="text-xl font-semibold mb-4 flex items-center text-gray-200">
+              <FileText className="h-6 w-6 mr-2 text-teal-400" />
+              4. Data Type
+            </h2>
+            <p className="text-sm text-gray-400 mb-4">What is the input data type for the model?</p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+              {['images', 'text', 'tabular'].map(item => (
+                <div
+                  key={item}
+                  className={`p-4 rounded-lg border-2 text-center cursor-pointer transition-colors duration-200 ${dataType === item ? 'border-teal-400 bg-gray-700' : 'border-gray-700 hover:border-gray-500'}`}
+                  onClick={() => setDataType(item)}
+                >
+                  <input type="radio" name="data_type" value={item} checked={dataType === item} className="hidden" onChange={() => {}} />
+                  <p className="font-medium capitalize">{item}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Dynamic Model & API Details Section */}
+          {knowledge && dataType && (
+            <div className="dynamic-inputs-section space-y-6">
+              <h2 className="text-xl font-semibold flex items-center text-gray-200">
+                <Database className="h-6 w-6 mr-2 text-teal-400" />
+                5. Model & API Details
+              </h2>
+              <p className="text-sm text-gray-400">
+                Please provide information about the model you wish to test.
+              </p>
+
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-gray-300">Model Endpoint or Download Link</label>
+                <input 
+                  type="text" 
+                  name="model_endpoint"
+                  placeholder="e.g., https://api.your-model.com/predict or path/to/model.h5"
+                  value={dynamicInputs.model_endpoint}
+                  onChange={handleInputChange}
+                  className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:outline-none focus:border-teal-400"
+                />
+                <p className="text-xs text-gray-500">This is the location of the model you want to test.</p>
+              </div>
+
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-gray-300">API Key or Authentication Token</label>
+                <input 
+                  type="password" 
+                  name="api_key"
+                  placeholder="Enter your API key or token (e.g., for black-box testing)"
+                  value={dynamicInputs.api_key}
+                  onChange={handleInputChange}
+                  className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:outline-none focus:border-teal-400"
+                />
+                <p className="text-xs text-gray-500">For black-box testing, this may be required to query the model.</p>
+              </div>
+
+              {/* Dynamic Attack Parameters Section */}
+              <h2 className="text-xl font-semibold flex items-center text-gray-200">
+                <Settings className="h-6 w-6 mr-2 text-teal-400" />
+                6. Attack Parameters
+              </h2>
+              <p className="text-sm text-gray-400">
+                Provide additional details to refine the attack and its configuration.
+              </p>
+
+              {/* General inputs for all tests */}
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-gray-300">Model Framework</label>
+                <input 
+                  type="text" 
+                  name="model_type"
+                  placeholder="e.g., KerasClassifier, PyTorchClassifier"
+                  value={dynamicInputs.model_type}
+                  onChange={handleInputChange}
+                  className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:outline-none focus:border-teal-400"
+                />
+              </div>
+
+              {/* Knowledge-specific inputs */}
+              {knowledge === 'white-box' && (
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-gray-300">Perturbation Limit (Epsilon)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    name="epsilon"
+                    placeholder="e.g., 0.3 for L-inf norm"
+                    value={dynamicInputs.epsilon}
+                    onChange={handleInputChange}
+                    className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:outline-none focus:border-teal-400"
+                  />
+                  <p className="text-xs text-gray-500">The maximum allowed modification to the input data.</p>
+                </div>
+              )}
+              {knowledge === 'black-box' && (
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-gray-300">Maximum Queries</label>
+                  <input
+                    type="number"
+                    step="100"
+                    name="num_queries"
+                    placeholder="e.g., 1000"
+                    value={dynamicInputs.num_queries}
+                    onChange={handleInputChange}
+                    className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:outline-none focus:border-teal-400"
+                  />
+                  <p className="text-xs text-gray-500">The total number of times the model can be queried during the test.</p>
+                </div>
+              )}
+
+              {/* Data-type specific inputs */}
+              {dataType === 'images' && (
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-gray-300">Image Shape</label>
+                  <input
+                    type="text"
+                    name="image_shape"
+                    placeholder="e.g., (28, 28, 1) or (224, 224, 3)"
+                    value={dynamicInputs.image_shape}
+                    onChange={handleInputChange}
+                    className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:outline-none focus:border-teal-400"
+                  />
+                </div>
+              )}
+              {dataType === 'text' && (
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-gray-300">Text Max Length</label>
+                  <input
+                    type="number"
+                    name="text_max_length"
+                    placeholder="e.g., 128"
+                    value={dynamicInputs.text_max_length}
+                    onChange={handleInputChange}
+                    className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:outline-none focus:border-teal-400"
+                  />
+                </div>
+              )}
+              {dataType === 'tabular' && (
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-gray-300">Number of Features</label>
+                  <input
+                    type="number"
+                    name="tabular_features"
+                    placeholder="e.g., 13"
+                    value={dynamicInputs.tabular_features}
+                    onChange={handleInputChange}
+                    className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:outline-none focus:border-teal-400"
+                  />
+                </div>
+              )}
+            </div>
+          )}
+
+          <button
+            type="submit"
+            className={`w-full py-4 text-lg font-bold text-gray-900 rounded-lg shadow-lg transition-colors duration-200 ${isFormComplete ? 'bg-teal-400 hover:bg-teal-300' : 'bg-gray-600 cursor-not-allowed'}`}
+            disabled={!isFormComplete}
+          >
+            Find Recommended Attacks
+          </button>
+        </form>
+        )}
+
+        {recommendations && (
+          <div className="bg-gray-700 p-6 rounded-lg space-y-4">
+            <h2 className="text-2xl font-semibold text-teal-400">
+              <Shield className="inline-block h-6 w-6 mr-2" />
+              Recommended Attacks
+            </h2>
+            <p className="text-gray-300">
+              Based on your selections, here are the most applicable attacks from the IBM ART library:
+            </p>
+            <div className="space-y-4">
+              {recommendations.length > 0 ? (
+                recommendations.map((attack, index) => (
+                  <div key={index} className="bg-gray-800 p-4 rounded-lg border-l-4 border-teal-400">
+                    <h4 className="font-bold text-lg mb-1">{attack.name}</h4>
+                    <p className="text-sm text-gray-400">{attack.desc}</p>
+                  </div>
+                ))
+              ) : (
+                <div className="text-center text-gray-400 p-8 border-2 border-dashed border-gray-600 rounded-lg">
+                  <XCircle className="h-10 w-10 mx-auto text-gray-500 mb-3" />
+                  <p className="text-lg">No specific attack found for this combination of selections.</p>
+                </div>
+              )}
+            </div>
+            <button
+              onClick={resetForm}
+              className="w-full py-3 text-lg font-bold text-gray-900 bg-gray-400 rounded-lg shadow-lg hover:bg-gray-300 transition-colors duration-200 mt-4"
+            >
+              Reset
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default App;
+
