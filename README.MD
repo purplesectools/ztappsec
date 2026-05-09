@@ -14,9 +14,15 @@ Actionable Reporting: After completing the questionnaire, the tool generates a c
 
 An overall AppSec maturity score.
 
+A weighted scoring model that respects SAMM category and practice importance.
+
+An evidence-confidence score that highlights how much of the assessment is based on known answers versus "I Don't Know" responses.
+
 Radar and bar charts to visualize maturity across SAMM categories and practices.
 
 A breakdown of maturity by each NIST Zero Trust tenant.
+
+A SAMM-to-NIST mapping matrix to show where maturity is strong or weak across both frameworks.
 
 A prioritized list of recommendations based on your responses to help you build a practical roadmap for improvement.
 

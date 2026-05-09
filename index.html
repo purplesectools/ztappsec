@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Zero Trust Enabled Application Security Maturity Assessment</title>
+    <title>AppSecMeter</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     
@@ -324,6 +324,189 @@
             return 'score-text-red';
         }
 
+        const getAnswerLabel = (answer) => {
+            const labels = {
+                yes: 'Yes',
+                partial: 'Partial',
+                planned: 'Planned',
+                no: 'No',
+                i_dont_know: "I Don't Know",
+            };
+            return labels[answer] || 'Unanswered';
+        };
+
+        const getMaturityBand = (score) => {
+            if (score >= 85) return { label: 'Leading', description: 'Controls appear broadly institutionalized and measured.' };
+            if (score >= 70) return { label: 'Managed', description: 'Core controls are in place, with some consistency gaps left to close.' };
+            if (score >= 50) return { label: 'Progressing', description: 'Important practices exist, but coverage is still uneven.' };
+            if (score >= 30) return { label: 'Developing', description: 'Foundational controls are emerging but not yet dependable.' };
+            return { label: 'Early', description: 'The program still relies on ad hoc or missing controls.' };
+        };
+
+        const calculateAssessmentScores = (data, answers) => {
+            const categoryScores = {};
+            const practiceScores = {};
+            const answerCounts = { yes: 0, partial: 0, planned: 0, no: 0, i_dont_know: 0 };
+            const recommendations = [];
+            const strengths = [];
+            const unknownQuestions = [];
+            const nistTotals = {};
+            const nistPracticeMap = {};
+            const matrix = {};
+            const allTenants = Array.from(
+                new Set(
+                    data.categories.flatMap(category =>
+                        category.practices.flatMap(practice =>
+                            practice.questions.flatMap(question =>
+                                (question.nist_tenants && question.nist_tenants.length > 0)
+                                    ? question.nist_tenants
+                                    : practice.nist_tenants
+                            )
+                        )
+                    )
+                )
+            ).sort();
+
+            allTenants.forEach(tenant => {
+                nistTotals[tenant] = { score: 0, max: 0 };
+                nistPracticeMap[tenant] = new Set();
+            });
+
+            let totalWeightedScore = 0;
+            let totalWeightedMax = 0;
+            let knownAnswers = 0;
+            let totalQuestions = 0;
+
+            data.categories.forEach(category => {
+                const categoryWeight = category.weight || 1;
+                let categoryWeightedScore = 0;
+                let categoryWeightedMax = 0;
+
+                matrix[category.name] = {};
+                allTenants.forEach(tenant => {
+                    matrix[category.name][tenant] = { score: 0, max: 0, count: 0 };
+                });
+
+                category.practices.forEach(practice => {
+                    const practiceWeight = practice.weight || 1;
+                    let practiceWeightedScore = 0;
+                    let practiceWeightedMax = 0;
+                    const practiceRecommendations = [];
+
+                    practice.questions.forEach(question => {
+                        totalQuestions += 1;
+                        const answer = answers[question.id];
+                        if (answer) answerCounts[answer] += 1;
+
+                        const baseWeight = categoryWeight * practiceWeight * (question.weight || 1);
+                        const rawScore = answer ? question.maturity_map[answer] : 0;
+                        const maxScore = question.maturity_map.yes;
+                        const questionTenants = (question.nist_tenants && question.nist_tenants.length > 0)
+                            ? question.nist_tenants
+                            : practice.nist_tenants;
+
+                        if (answer && answer !== 'i_dont_know') {
+                            knownAnswers += 1;
+                            const weightedScore = rawScore * baseWeight;
+                            const weightedMax = maxScore * baseWeight;
+
+                            practiceWeightedScore += weightedScore;
+                            practiceWeightedMax += weightedMax;
+                            categoryWeightedScore += weightedScore;
+                            categoryWeightedMax += weightedMax;
+                            totalWeightedScore += weightedScore;
+                            totalWeightedMax += weightedMax;
+
+                            questionTenants.forEach(tenant => {
+                                nistTotals[tenant].score += weightedScore;
+                                nistTotals[tenant].max += weightedMax;
+                                nistPracticeMap[tenant].add(practice.name);
+                                matrix[category.name][tenant].score += weightedScore;
+                                matrix[category.name][tenant].max += weightedMax;
+                                matrix[category.name][tenant].count += 1;
+                            });
+                        } else if (answer === 'i_dont_know') {
+                            unknownQuestions.push({
+                                id: question.id,
+                                question: question.text,
+                                category: category.name,
+                                practice: practice.name,
+                            });
+                            questionTenants.forEach(tenant => {
+                                nistPracticeMap[tenant].add(practice.name);
+                                matrix[category.name][tenant].count += 1;
+                            });
+                        }
+
+                        if (answer === 'no' || answer === 'partial' || answer === 'planned' || answer === 'i_dont_know') {
+                            const priority =
+                                answer === 'no' ? 4 :
+                                answer === 'i_dont_know' ? 3.5 :
+                                answer === 'planned' ? 2.5 : 2;
+                            practiceRecommendations.push({
+                                text: question.recommendations[0],
+                                category: category.name,
+                                practice: practice.name,
+                                question: question.text,
+                                answer,
+                                ztAreas: questionTenants,
+                                priorityScore: priority * baseWeight,
+                            });
+                        }
+                    });
+
+                    const practicePercent = practiceWeightedMax > 0 ? (practiceWeightedScore / practiceWeightedMax) * 100 : 0;
+                    practiceScores[practice.name] = practicePercent;
+
+                    if (practiceWeightedMax > 0 && practicePercent >= 80) {
+                        strengths.push({
+                            name: practice.name,
+                            category: category.name,
+                            score: practicePercent,
+                        });
+                    }
+
+                    recommendations.push(...practiceRecommendations);
+                });
+
+                categoryScores[category.name] = categoryWeightedMax > 0 ? (categoryWeightedScore / categoryWeightedMax) * 100 : 0;
+            });
+
+            const overallMaturity = totalWeightedMax > 0 ? (totalWeightedScore / totalWeightedMax) * 100 : 0;
+            const evidenceConfidence = totalQuestions > 0 ? (knownAnswers / totalQuestions) * 100 : 0;
+            const nistScores = allTenants.map(tenant => ({
+                name: tenant,
+                score: nistTotals[tenant].max > 0 ? (nistTotals[tenant].score / nistTotals[tenant].max) * 100 : 0,
+                practices: Array.from(nistPracticeMap[tenant]).sort(),
+            }));
+            const overallZeroTrustPreparedness = nistScores.length > 0
+                ? nistScores.reduce((sum, item) => sum + item.score, 0) / nistScores.length
+                : 0;
+
+            const sortedRecommendations = recommendations.sort((a, b) => b.priorityScore - a.priorityScore);
+            const highImpact = sortedRecommendations.filter(rec => rec.answer === 'no' || rec.answer === 'i_dont_know').slice(0, 10);
+            const continuous = sortedRecommendations.filter(rec => rec.answer === 'planned' || rec.answer === 'partial').slice(0, 10);
+            const topStrengths = strengths.sort((a, b) => b.score - a.score).slice(0, 5);
+
+                return {
+                overallMaturity,
+                overallZeroTrustPreparedness,
+                evidenceConfidence,
+                knownAnswers,
+                totalQuestions,
+                unknownCount: answerCounts.i_dont_know,
+                categoryScores,
+                practiceScores,
+                nistScores,
+                matrix,
+                recommendations: { highImpact, continuous },
+                answerCounts,
+                topStrengths,
+                unknownQuestions,
+                maturityBand: getMaturityBand(overallMaturity),
+            };
+        };
+
         // --- REACT CHART COMPONENTS ---
         const ChartComponent = ({ type, data, options }) => {
             const chartRef = useRef(null);
@@ -352,7 +535,10 @@
             <aside className="w-full md:w-1/4 lg:w-1/5 bg-slate-800 text-white p-6 fixed top-0 left-0 h-full overflow-y-auto hidden md:block">
                 <div className="flex items-center space-x-3 mb-8">
                     <svg className="w-10 h-10 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
-                    <h1 className="text-2xl font-bold">Zero Trust Enabled AppSec</h1>
+                    <div>
+                        <h1 className="text-2xl font-bold">AppSecMeter</h1>
+                        <p className="text-sm text-slate-300 mt-1">AppSec + Zero Trust Assessment</p>
+                    </div>
                 </div>
                 <div>
                     <h2 className="text-lg font-semibold text-indigo-300 mb-2">About this Assessment</h2>
@@ -502,68 +688,40 @@
             </div>
         );
 
-        const StatusOverview = ({ data, answers, sammScores }) => {
-            const nistStatus = useMemo(() => {
-                const tenantScores = {};
-                const tenantMaxScores = {};
-                const tenantPractices = {};
-                
-                const allTenants = Array.from(new Set(data.categories.flatMap(c => c.practices.flatMap(p => p.nist_tenants)))).sort();
-
-                allTenants.forEach(t => {
-                    tenantScores[t] = 0;
-                    tenantMaxScores[t] = 0;
-                    tenantPractices[t] = new Set();
-                });
-
-                data.categories.forEach(cat => {
-                    cat.practices.forEach(prac => {
-                        let practiceScore = 0;
-                        let practiceMaxScore = 0;
-                        
-                        prac.questions.forEach(q => {
-                            practiceScore += answers[q.id] ? q.maturity_map[answers[q.id]] : 0;
-                            practiceMaxScore += q.maturity_map['yes'];
-                        });
-                        
-                        prac.nist_tenants.forEach(tenant => {
-                            tenantScores[tenant] += practiceScore;
-                            tenantMaxScores[tenant] += practiceMaxScore;
-                            tenantPractices[tenant].add(prac.name);
-                        });
-                    });
-                });
-                
-                return allTenants.map(tenant => ({
-                    name: tenant,
-                    score: tenantMaxScores[tenant] > 0 ? (tenantScores[tenant] / tenantMaxScores[tenant]) * 100 : 0,
-                    practices: Array.from(tenantPractices[tenant]),
-                }));
-
-            }, [data, answers]);
-
+        const StatusOverview = ({ sammScores, nistScores }) => {
             const sammStatus = useMemo(() => {
                 return Object.entries(sammScores).map(([name, score]) => ({ name, score }));
             }, [sammScores]);
-            
+
             const StatusList = ({ title, items }) => {
-                const passed = items.filter(i => i.score >= 50);
-                const failed = items.filter(i => i.score < 50);
+                const strong = items.filter(i => i.score >= 75);
+                const developing = items.filter(i => i.score >= 50 && i.score < 75);
+                const weak = items.filter(i => i.score < 50);
+
+                const renderBadges = (entries, className) => (
+                    entries.length > 0
+                        ? entries.map(entry => (
+                            <span key={entry.name} className={`${className} text-sm font-medium px-3 py-1 rounded-full`}>
+                                {entry.name} ({entry.score.toFixed(0)}%)
+                            </span>
+                        ))
+                        : <p className="text-sm text-slate-500">None</p>
+                );
 
                 return (
                     <div className="bg-white p-4 rounded-lg border">
                         <h4 className="text-lg font-bold text-slate-800 mb-4">{title}</h4>
                         <div>
-                            <h5 className="font-semibold text-green-600 mb-2">Passed (50% or more)</h5>
-                            <div className="flex flex-wrap gap-2">
-                                {passed.length > 0 ? passed.map(p => <span key={p.name} className="bg-green-100 text-green-800 text-sm font-medium px-3 py-1 rounded-full">{p.name}</span>) : <p className="text-sm text-slate-500">None</p>}
-                            </div>
+                            <h5 className="font-semibold text-green-600 mb-2">Strong (75% or more)</h5>
+                            <div className="flex flex-wrap gap-2">{renderBadges(strong, 'bg-green-100 text-green-800')}</div>
                         </div>
                         <div className="mt-4">
-                            <h5 className="font-semibold text-red-600 mb-2">Needs Improvement (less than 50%)</h5>
-                             <div className="flex flex-wrap gap-2">
-                                {failed.length > 0 ? failed.map(f => <span key={f.name} className="bg-red-100 text-red-800 text-sm font-medium px-3 py-1 rounded-full">{f.name}</span>) : <p className="text-sm text-slate-500">None</p>}
-                            </div>
+                            <h5 className="font-semibold text-amber-600 mb-2">Progressing (50% to 74%)</h5>
+                            <div className="flex flex-wrap gap-2">{renderBadges(developing, 'bg-amber-100 text-amber-800')}</div>
+                        </div>
+                        <div className="mt-4">
+                            <h5 className="font-semibold text-red-600 mb-2">Priority Gaps (less than 50%)</h5>
+                            <div className="flex flex-wrap gap-2">{renderBadges(weak, 'bg-red-100 text-red-800')}</div>
                         </div>
                     </div>
                 );
@@ -574,57 +732,17 @@
                     <h3 className="text-2xl font-bold text-slate-700 mb-4 text-center">Maturity Status Overview</h3>
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                         <StatusList title="SAMM Category Status" items={sammStatus} />
-                        <StatusList title="NIST Tenant Status" items={nistStatus} />
+                        <StatusList title="Zero Trust Capability Status" items={nistScores} />
                     </div>
                 </div>
             )
         };
         
-        const NistTenantOverview = ({ data, answers }) => {
-             const nistData = useMemo(() => {
-                const tenantScores = {};
-                const tenantMaxScores = {};
-                const tenantPractices = {};
-                
-                const allTenants = Array.from(new Set(data.categories.flatMap(c => c.practices.flatMap(p => p.nist_tenants)))).sort();
-
-                allTenants.forEach(t => {
-                    tenantScores[t] = 0;
-                    tenantMaxScores[t] = 0;
-                    tenantPractices[t] = new Set();
-                });
-
-                data.categories.forEach(cat => {
-                    cat.practices.forEach(prac => {
-                        let practiceScore = 0;
-                        let practiceMaxScore = 0;
-                        
-                        prac.questions.forEach(q => {
-                            practiceScore += answers[q.id] ? q.maturity_map[answers[q.id]] : 0;
-                            practiceMaxScore += q.maturity_map['yes'];
-                        });
-                        
-                        prac.nist_tenants.forEach(tenant => {
-                            // Attribute the total score of the practice to each tenant it belongs to
-                            tenantScores[tenant] += practiceScore;
-                            tenantMaxScores[tenant] += practiceMaxScore;
-                            tenantPractices[tenant].add(prac.name);
-                        });
-                    });
-                });
-                
-                return allTenants.map(tenant => ({
-                    name: tenant,
-                    score: tenantMaxScores[tenant] > 0 ? (tenantScores[tenant] / tenantMaxScores[tenant]) * 100 : 0,
-                    practices: Array.from(tenantPractices[tenant]).sort(),
-                }));
-
-            }, [data, answers]);
-            
+        const NistTenantOverview = ({ nistData }) => {
             return (
                  <div className="bg-slate-50 rounded-lg p-6 mt-8">
-                    <h3 className="text-2xl font-bold text-slate-700 mb-2 text-center">Zero Trust Tenant Overview</h3>
-                    <p className="text-slate-500 text-center mb-6 max-w-3xl mx-auto">This view shows your maturity score for each NIST Zero Trust Tenant and the AppSec practices that support it.</p>
+                    <h3 className="text-2xl font-bold text-slate-700 mb-2 text-center">Zero Trust Capability Overview</h3>
+                    <p className="text-slate-500 text-center mb-6 max-w-3xl mx-auto">This view shows your maturity score for each NIST Zero Trust capability area and the AppSec practices that support it.</p>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                         {nistData.map(tenant => (
                             <div key={tenant.name} className="border border-slate-200 rounded-lg bg-white shadow-sm flex flex-col">
@@ -643,7 +761,53 @@
                     </div>
                 </div>
             )
-        }
+        };
+
+        const FrameworkMappingMatrix = ({ matrix }) => {
+            const categories = Object.keys(matrix);
+            const tenants = categories.length > 0 ? Object.keys(matrix[categories[0]]) : [];
+
+            return (
+                <div className="bg-slate-50 rounded-lg p-6 mt-8">
+                    <h3 className="text-2xl font-bold text-slate-700 mb-2 text-center">SAMM to Zero Trust Mapping Matrix</h3>
+                    <p className="text-slate-500 text-center mb-6 max-w-3xl mx-auto">Each cell shows the weighted maturity score for controls in that SAMM category that also support the listed Zero Trust capability area.</p>
+                    <div className="overflow-x-auto">
+                        <table className="min-w-full border border-slate-200 bg-white">
+                            <thead className="bg-slate-100">
+                                <tr>
+                                    <th className="px-4 py-3 text-left text-sm font-semibold text-slate-700 border-b border-r">SAMM Category</th>
+                                    {tenants.map(tenant => (
+                                        <th key={tenant} className="px-4 py-3 text-left text-sm font-semibold text-slate-700 border-b border-r last:border-r-0">
+                                            {tenant}
+                                        </th>
+                                    ))}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {categories.map(category => (
+                                    <tr key={category} className="border-b last:border-b-0">
+                                        <td className="px-4 py-3 text-sm font-semibold text-slate-800 border-r">{category}</td>
+                                        {tenants.map(tenant => {
+                                            const cell = matrix[category][tenant];
+                                            const score = cell.max > 0 ? (cell.score / cell.max) * 100 : null;
+                                            return (
+                                                <td key={tenant} className="px-4 py-3 text-sm text-slate-700 border-r last:border-r-0">
+                                                    {score === null ? '—' : (
+                                                        <span className={getScoreTextColor(score)}>
+                                                            {score.toFixed(0)}%
+                                                        </span>
+                                                    )}
+                                                </td>
+                                            );
+                                        })}
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            );
+        };
 
         const Report = ({ answers, data, onBack }) => {
             const reportRef = useRef(null);
@@ -690,60 +854,7 @@
                 });
             };
 
-            const scores = useMemo(() => {
-                let categoryScores = {};
-                let practiceScores = {};
-                let totalScore = 0;
-                let totalMaxScore = 0;
-                let recommendations = { highImpact: [], continuous: [] };
-                let answerCounts = { yes: 0, partial: 0, planned: 0, no: 0, i_dont_know: 0 };
-
-                data.categories.forEach(category => {
-                    let categoryScore = 0;
-                    let categoryMaxScore = 0;
-                    
-                    category.practices.forEach(practice => {
-                        let practiceScore = 0;
-                        let practiceMaxScore = 0;
-                        practice.questions.forEach(question => {
-                            const answer = answers[question.id];
-                            const score = answer ? question.maturity_map[answer] : 0;
-                            const maxScore = question.maturity_map['yes'];
-                            
-                            practiceScore += score;
-                            practiceMaxScore += maxScore;
-
-                            if(answer) answerCounts[answer]++;
-
-                            const recommendation = {
-                                text: question.recommendations[0],
-                                category: category.name,
-                                practice: practice.name,
-                                question: question.text,
-                                answer: answer,
-                            };
-
-                            if (answer === 'no' || answer === 'i_dont_know') {
-                                recommendations.highImpact.push(recommendation);
-                            } else if (answer === 'partial' || answer === 'planned') {
-                                recommendations.continuous.push(recommendation);
-                            }
-                        });
-                        
-                        categoryScore += practiceScore;
-                        categoryMaxScore += practiceMaxScore;
-                        practiceScores[practice.name] = practiceMaxScore > 0 ? (practiceScore / practiceMaxScore) * 100 : 0;
-                    });
-                    
-                    totalScore += categoryScore;
-                    totalMaxScore += categoryMaxScore;
-                    categoryScores[category.name] = categoryMaxScore > 0 ? (categoryScore / categoryMaxScore) * 100 : 0;
-                });
-
-                const overallMaturity = totalMaxScore > 0 ? (totalScore / totalMaxScore) * 100 : 0;
-                
-                return { overallMaturity, categoryScores, practiceScores, recommendations, answerCounts };
-            }, [answers, data]);
+            const scores = useMemo(() => calculateAssessmentScores(data, answers), [answers, data]);
 
             const radarChartData = {
                 labels: Object.keys(scores.categoryScores),
@@ -774,6 +885,15 @@
                 }]
             };
 
+            const lowestCategories = Object.entries(scores.categoryScores)
+                .map(([name, score]) => ({ name, score }))
+                .sort((a, b) => a.score - b.score)
+                .slice(0, 3);
+
+            const lowestTenants = [...scores.nistScores]
+                .sort((a, b) => a.score - b.score)
+                .slice(0, 3);
+
             const RecommendationCard = ({ rec }) => {
                 const colors = {
                     no: 'border-red-500',
@@ -787,22 +907,29 @@
                         <p className="text-sm text-slate-500 mt-1">
                             Area: <span className="font-medium">{rec.category} &gt; {rec.practice}</span>
                         </p>
+                        <p className="text-xs text-slate-500 mt-1">
+                            Zero Trust areas: <span className="font-medium">{rec.ztAreas.join(', ')}</span>
+                        </p>
                          <p className="text-xs text-slate-400 mt-1">
-                            Question: "{rec.question}" (Answered: <span className="font-medium capitalize">{rec.answer.replace(/_/g, ' ')}</span>)
+                            Question: "{rec.question}" (Answered: <span className="font-medium">{getAnswerLabel(rec.answer)}</span>)
                         </p>
                     </div>
                 );
             };
 
             return (
-                <div className="bg-white rounded-xl shadow-lg p-6 md:p-8">
+                <div className="bg-white rounded-xl shadow-lg p-5 md:p-8 max-w-7xl mx-auto">
                     <div ref={reportRef}>
-                        <div className="flex justify-between items-start mb-8">
+                        <div className="flex flex-col xl:flex-row xl:justify-between xl:items-start gap-4 mb-8">
                             <div>
-                                <h2 className="text-4xl font-extrabold text-slate-800 mb-2">Zero Trust Enabled AppSec Maturity</h2>
-                                <p className="text-lg text-slate-500">Executive Summary</p>
+                                <h2 className="text-3xl md:text-4xl font-extrabold text-slate-800 mb-2">AppSecMeter</h2>
+                                <p className="text-base md:text-lg text-slate-500">AppSec + Zero Trust Assessment</p>
+                                <p className="text-sm font-medium text-slate-500 mt-1">Executive Summary</p>
+                                <p className="text-sm text-slate-500 mt-2 max-w-3xl">
+                                    This assessment is a mapped preparedness view aligned to OWASP SAMM and NIST Zero Trust principles. It is not an official certification or formal compliance determination.
+                                </p>
                             </div>
-                            <div id="report-buttons" className="flex gap-2">
+                            <div id="report-buttons" className="flex flex-wrap gap-2 xl:justify-end">
                                 <button onClick={onBack} className="bg-slate-600 text-white px-4 py-2 rounded-lg hover:bg-slate-700 transition duration-300 flex items-center space-x-2">
                                     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clipRule="evenodd" /></svg>
                                     <span>Back</span>
@@ -815,21 +942,112 @@
                         </div>
 
                         {/* Top Row KPIs */}
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                        <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-4 gap-6 mb-8">
                             <div className="bg-slate-50 rounded-lg p-6 flex flex-col items-center justify-center text-center">
-                                <h3 className="text-xl font-semibold text-slate-600 mb-2">Overall Maturity</h3>
-                                <p className="text-6xl font-bold text-indigo-600">{scores.overallMaturity.toFixed(1)}%</p>
+                                <h3 className="text-xl font-semibold text-slate-600 mb-2">OWASP SAMM Maturity</h3>
+                                <p className="text-5xl md:text-6xl font-bold text-indigo-600">{scores.overallMaturity.toFixed(1)}%</p>
+                                <p className="mt-3 text-sm font-semibold text-slate-700">{scores.maturityBand.label}</p>
+                                <p className="text-sm text-slate-500 mt-1">{scores.maturityBand.description}</p>
                             </div>
-                            <div className="md:col-span-2 bg-slate-50 rounded-lg p-6">
-                                 <h3 className="text-xl font-semibold text-slate-600 mb-4 text-center">Answer Distribution</h3>
-                                 <div className="h-48">
-                                    <ChartComponent type="doughnut" data={doughnutChartData} options={{ maintainAspectRatio: false, plugins: { legend: { position: 'right' } } }} />
-                                 </div>
+                            <div className="bg-slate-50 rounded-lg p-6 flex flex-col items-center justify-center text-center">
+                                <h3 className="text-xl font-semibold text-slate-600 mb-2">Zero Trust Preparedness</h3>
+                                <p className={`text-5xl md:text-6xl font-bold ${getScoreTextColor(scores.overallZeroTrustPreparedness)}`}>{scores.overallZeroTrustPreparedness.toFixed(1)}%</p>
+                                <p className="text-sm text-slate-500 mt-3">
+                                    Calculated as the average of the mapped NIST Zero Trust capability scores, to avoid overcounting controls that support multiple areas.
+                                </p>
+                            </div>
+                            <div className="bg-slate-50 rounded-lg p-6 flex flex-col items-center justify-center text-center">
+                                <h3 className="text-xl font-semibold text-slate-600 mb-2">Evidence Confidence</h3>
+                                <p className={`text-5xl md:text-6xl font-bold ${getScoreTextColor(scores.evidenceConfidence)}`}>{scores.evidenceConfidence.toFixed(1)}%</p>
+                                <p className="text-sm text-slate-500 mt-3">
+                                    Based on {scores.knownAnswers} of {scores.totalQuestions} questions answered with a known state.
+                                </p>
+                                <p className="text-sm text-slate-500 mt-1">
+                                    {scores.unknownCount} response{scores.unknownCount === 1 ? '' : 's'} marked as "I Don't Know".
+                                </p>
+                            </div>
+                            <div className="bg-slate-50 rounded-lg p-6">
+                                <h3 className="text-xl font-semibold text-slate-600 mb-4 text-center">Scoring Method</h3>
+                                <div className="space-y-3 text-sm text-slate-600">
+                                    <p>The SAMM score is a weighted readiness index built from the full questionnaire across SAMM-aligned practices.</p>
+                                    <p>The Zero Trust score is a separate preparedness index calculated from the NIST capability mappings on each question.</p>
+                                    <p>"I Don't Know" lowers confidence rather than silently behaving like "No".</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="bg-slate-50 rounded-lg p-6 mb-8">
+                             <h3 className="text-xl font-semibold text-slate-600 mb-4 text-center">Answer Distribution</h3>
+                             <div className="h-48">
+                                <ChartComponent type="doughnut" data={doughnutChartData} options={{ maintainAspectRatio: false, plugins: { legend: { position: 'right' } } }} />
+                             </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+                            <div className="bg-slate-50 rounded-lg p-6">
+                                <h3 className="text-xl font-semibold text-slate-700 mb-4">Executive Takeaways</h3>
+                                <div className="space-y-3 text-sm text-slate-600">
+                                    <p>
+                                        The current posture is <span className="font-semibold text-slate-800">{scores.maturityBand.label.toLowerCase()}</span> in SAMM maturity at <span className="font-semibold text-slate-800">{scores.overallMaturity.toFixed(1)}%</span>, with Zero Trust preparedness at <span className="font-semibold text-slate-800">{scores.overallZeroTrustPreparedness.toFixed(1)}%</span>.
+                                    </p>
+                                    <p>
+                                        The weakest SAMM areas are <span className="font-semibold text-slate-800">{lowestCategories.map(item => item.name).join(', ')}</span>.
+                                    </p>
+                                    <p>
+                                        The lowest Zero Trust capability areas are <span className="font-semibold text-slate-800">{lowestTenants.map(item => item.name).join(', ')}</span>.
+                                    </p>
+                                    <p>
+                                        {scores.unknownCount > 0
+                                            ? 'Some answers are still evidence-light, so treat this score as directional until those gaps are validated.'
+                                            : 'All questions were answered with a known state, so this assessment is stronger as a planning baseline.'}
+                                    </p>
+                                    <p>
+                                        Use the SAMM sections to plan program maturity improvements, and the Zero Trust sections to target architecture and control posture.
+                                    </p>
+                                </div>
+                            </div>
+                            <div className="bg-slate-50 rounded-lg p-6">
+                                <h3 className="text-xl font-semibold text-slate-700 mb-4">Preparation Focus</h3>
+                                <div className="space-y-3 text-sm text-slate-600">
+                                    <p>
+                                        To improve SAMM readiness fastest, start with <span className="font-semibold text-slate-800">{lowestCategories[0]?.name || 'your lowest category'}</span>.
+                                    </p>
+                                    <p>
+                                        To improve Zero Trust preparedness fastest, start with <span className="font-semibold text-slate-800">{lowestTenants[0]?.name || 'your lowest capability area'}</span>.
+                                    </p>
+                                    <p>
+                                        Controls that raise both scores tend to be threat modeling, strong workload identity, policy automation, centralized secrets, and continuous verification.
+                                    </p>
+                                </div>
+                            </div>
+                            <div className="bg-slate-50 rounded-lg p-6">
+                                <h3 className="text-xl font-semibold text-slate-700 mb-4">Top Strengths</h3>
+                                <div className="space-y-3">
+                                    {scores.topStrengths.length > 0 ? scores.topStrengths.map(item => (
+                                        <div key={item.name} className="p-3 rounded-lg bg-white border border-green-200">
+                                            <p className="font-semibold text-slate-800">{item.name}</p>
+                                            <p className="text-sm text-slate-500">{item.category}</p>
+                                            <p className="text-sm text-green-700 font-semibold mt-1">{item.score.toFixed(0)}%</p>
+                                        </div>
+                                    )) : <p className="text-sm text-slate-500">No standout strengths identified yet.</p>}
+                                </div>
+                            </div>
+                            <div className="bg-slate-50 rounded-lg p-6">
+                                <h3 className="text-xl font-semibold text-slate-700 mb-4">Unknowns to Validate</h3>
+                                <div className="space-y-3">
+                                    {scores.unknownQuestions.length > 0 ? scores.unknownQuestions.slice(0, 5).map(item => (
+                                        <div key={item.id} className="p-3 rounded-lg bg-white border border-slate-200">
+                                            <p className="font-semibold text-slate-800 text-sm">{item.practice}</p>
+                                            <p className="text-xs text-slate-500 mt-1">{item.category}</p>
+                                            <p className="text-sm text-slate-600 mt-2">{item.question}</p>
+                                        </div>
+                                    )) : <p className="text-sm text-slate-500">No unknown responses. Nice signal quality.</p>}
+                                </div>
                             </div>
                         </div>
                         
                         {/* Status Overview */}
-                        <StatusOverview data={data} answers={answers} sammScores={scores.categoryScores} />
+                        <StatusOverview sammScores={scores.categoryScores} nistScores={scores.nistScores} />
 
                         {/* Detailed Charts */}
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-8">
@@ -847,8 +1065,8 @@
                             </div>
                         </div>
 
-                        {/* NEW: Tenant Overview Cards */}
-                        <NistTenantOverview data={data} answers={answers} />
+                        <NistTenantOverview nistData={scores.nistScores} />
+                        <FrameworkMappingMatrix matrix={scores.matrix} />
 
                         {/* Recommendations */}
                         <div className="mt-8">
@@ -932,7 +1150,7 @@
             return (
                 <div className="flex">
                     <Sidebar />
-                    <main className="w-full md:ml-[25%] lg:ml-[20%] bg-slate-50 min-h-screen">
+                    <main className="w-full md:w-[75%] lg:w-[80%] md:ml-[25%] lg:ml-[20%] bg-slate-50 min-h-screen">
                         <div className="p-4 md:p-8">
                             {isReportView ? (
                                 <Report answers={answers} data={data} onBack={handleBackToQuestions} />
